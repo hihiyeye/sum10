@@ -1,3 +1,5 @@
+__all__ = ['generate_board', 'RectNode', 'RectGraph', 'BoardGenerator']
+
 import itertools
 import time
 
@@ -15,9 +17,6 @@ def generate_board(height, width):
 
 class RectNode:
     def __init__(self, node_no: int, nodes_mapping: list):
-        if len(nodes_mapping) != node_no:
-            raise ValueError()
-
         self.node_no = node_no
         self._nodes_mapping = nodes_mapping
         self._nodes_mapping.append(self)
@@ -75,7 +74,19 @@ class BoardGenerator:
             for j in range(self.width):
                 self._board_tags[i, j] = []
 
+    @property
+    def rect_nodes_mapping(self):
+        """nodes_mapping hint a way to solve the generated board."""
+        return self._nodes_mapping
+
     def generate(self, try_times=0, time_limit_ms=0):
+        """
+        Generate board data.
+
+        :param try_times: int, loop times limit. default is 0, no limit.
+        :param time_limit_ms: int, default is 0, no limit.
+        :return: np.array, generated board data.
+        """
         time_beg = time.time() * 1000
         loop = 0
         while True:
@@ -127,29 +138,32 @@ class BoardGenerator:
         else:
             raise ValueError(f'rect_pos len is {rect_pos_len}.')
 
-    def _expand_rect(self, valid_pos, required_pos_num: int, rect_pos: list):
+    def _expand_rect(self, valid_pos, required_pos_num: int):
+        for i in range(len(valid_pos)):
+            valid_pos[i], valid_pos[-1] = valid_pos[-1], valid_pos[i]
+            yield from self._expand_rect_core(valid_pos[:-1], required_pos_num - 1, [valid_pos[-1]])
+
+    def _expand_rect_core(self, valid_pos, required_pos_num: int, rect_pos: list):
         if required_pos_num == 0:
             yield rect_pos.copy()
             return
         if len(valid_pos) < required_pos_num:
             return
 
-        if not rect_pos:
-            for i in range(len(valid_pos)):
-                valid_pos[i], valid_pos[-1] = valid_pos[-1], valid_pos[i]
-                rect_pos.append(valid_pos[-1])
-                yield from self._expand_rect(valid_pos[:-1], required_pos_num - 1, rect_pos)
-                rect_pos.pop()
+        sorted_valid_pos = sorted(valid_pos,
+                                  key=lambda x: sum([rect_area(x, p) for p in rect_pos]))
+        top_k = 4
+        for i in range(min(top_k, len(sorted_valid_pos))):
+            rect_pos.append(sorted_valid_pos[i])
 
-        else:
-            sorted_valid_pos = sorted(valid_pos,
-                                      key=lambda x: sum([rect_area(x, p) for p in rect_pos]))
-            top_k_pos = sorted_valid_pos[:4]
-            for i in range(len(top_k_pos)):
-                pos = sorted_valid_pos.pop(-1 - i)
-                rect_pos.append(pos)
-                yield from self._expand_rect(sorted_valid_pos, required_pos_num - 1, rect_pos)
-                rect_pos.pop()
+            # don't care about order of sorted_valid_pos, it will be reordered in next function call.
+            sorted_valid_pos[i], sorted_valid_pos[-1] = sorted_valid_pos[-1], sorted_valid_pos[i]
+            pos_backup = sorted_valid_pos.pop()
+            yield from self._expand_rect_core(sorted_valid_pos, required_pos_num - 1, rect_pos)
+
+            # important: recover data when backtrack here.
+            sorted_valid_pos.append(pos_backup)
+            rect_pos.pop()
 
     def _verify_unfit_rect(self, rect, rect_pos):
         """
@@ -161,14 +175,16 @@ class BoardGenerator:
         :param rect_pos: a list of pos that will be occupied in rect.
         :return: bool, True if rect has no dead lock when removing rects, otherwise False..
         """
+        board_pos = self._get_board_pos_in_rect(rect)
+
         rect_no = self._rect_no + 1
         rect_node = RectNode(rect_no, self._nodes_mapping)
         children_no = []
-        for pos in rect_pos:
-            if self._board[pos] > 0:
+        for pos in board_pos:
+            if self._board[pos] != 0:
                 # 1. occupied pos means we must remove it before.
                 rect_node.parents.append(self._board_tags[pos])
-            else:
+            elif pos in rect_pos:
                 # 2. otherwise we must remove this rect before.
                 children_no += self._board_tags[pos]
 
@@ -176,7 +192,6 @@ class BoardGenerator:
             self._nodes_mapping[child_no].parents.append(rect_no)
 
         if not rect_node.is_in_cycle():
-            self._rect_no = rect_no
             return True
         else:
             # '-1' means the rect is the last one.
@@ -193,19 +208,20 @@ class BoardGenerator:
                         Otherwise only pos in rect_pos will be filled with addends.
         :return: None.
         """
+        self._rect_no += 1
+        board_pos = self._get_board_pos_in_rect(rect)
+        addend_iter = iter(addends)
         if rect_pos is None:
-            src, dst = rect
-            rect_shape = (dst[0] - src[0] + 1, dst[1] - src[1] + 1)
-            addends_arr = np.array(addends).reshape(rect_shape)
-            self._board[src[0]:dst[0] + 1, src[1]:dst[1] + 1] = addends_arr
+            RectNode(self._rect_no, self._nodes_mapping)
+            for pos in board_pos:
+                self._board[pos] = next(addend_iter)
+                self._board_tags[pos] = self._rect_no
         else:
             rect_pos_len, addends_len = len(rect_pos), len(addends)
             if rect_pos_len != addends_len:
                 raise ValueError(f'rect has {rect_pos_len} pos, '
                                  f'but addends num is {addends_len}.')
 
-            board_pos = self._get_board_pos_in_rect(rect)
-            addend_iter = iter(addends)
             for pos in board_pos:
                 if self._board[pos] != 0:
                     continue
@@ -274,6 +290,7 @@ class BoardGenerator:
             return None
 
     def _generate_rects_with_fit_shape(self, addends_num, group_num, shapes):
+        """fit shape rect don't need to be verified."""
         valid_pos = get_zero_pos(self._board)
         random.shuffle(valid_pos)
         for i, pos in enumerate(valid_pos):
@@ -283,12 +300,27 @@ class BoardGenerator:
                 continue
 
             rect = self._get_rect_with_fit_shape(pos, shapes)
+            if not rect:
+                continue
             self._fill_rect(rect, get_addends_random(addends_num))
             group_num -= 1
 
-        return group_num == 0
+        return group_num
 
     def _generate_rects(self, addends_num, group_num, fit_shapes, unfit_shapes=None, fit_prob=0.75):
+        """
+        Generate numbers of rects data in board.
+
+        :param addends_num: int, num of addends.
+        :param group_num: int, num of addends groups.
+        :param fit_shapes: list of fit rect shapes.
+        :param unfit_shapes: list of unfit rect shapes.
+        :param fit_prob: float, between [0, 1.0), the probability to choose fit shape.
+        :return: int, the remaining num of rect that can't be generated.
+        """
+        if not unfit_shapes:
+            return self._generate_rects_with_fit_shape(addends_num, group_num, fit_shapes)
+
         valid_pos = get_zero_pos(self._board)
         random.shuffle(valid_pos)
         # 1. find rects in fit shape
@@ -298,33 +330,27 @@ class BoardGenerator:
             if self._board[pos] != 0:
                 continue
 
-            if unfit_shapes:
-                find_rect_flag = False
-                choose_from_unfit_shapes = random.random() < (1.0 - fit_prob)
-                if choose_from_unfit_shapes:
-                    # loop for all unfit shapes rects
-                    for unfit_rect in self._unfit_rects_iter(pos, unfit_shapes, addends_num):
-                        valid_pos_in_rect = \
-                            [p for p in self._get_board_pos_in_rect(unfit_rect) if self._board[p] == 0]
-                        random.shuffle(valid_pos_in_rect)
-                        # loop for all pos in selected unfit rect
-                        for rect_pos in itertools.combinations(valid_pos_in_rect, addends_num):
-                            # avoid rect_pos to consist a fit shape rect.
-                            # such as: [a, b, c] use [a, b], [a, b] is a fit shape rect.
-                            if self._get_smallest_rect(rect_pos) != unfit_rect:
-                                continue
-                            if self._verify_unfit_rect(unfit_rect, rect_pos):
-                                self._fill_rect(unfit_rect, get_addends_random(addends_num), rect_pos)
-                                find_rect_flag = True
-                                break
-                        if find_rect_flag:
+            find_rect_flag = False
+            choose_from_unfit_shapes = random.random() < (1.0 - fit_prob)
+            if choose_from_unfit_shapes:
+                # loop for all unfit shapes rects
+                for unfit_rect in self._unfit_rects_iter(pos, unfit_shapes, addends_num):
+                    valid_pos_in_rect = \
+                        [p for p in self._get_board_pos_in_rect(unfit_rect) if self._board[p] == 0]
+                    random.shuffle(valid_pos_in_rect)
+                    # loop for all pos in selected unfit rect
+                    for rect_pos in itertools.combinations(valid_pos_in_rect, addends_num):
+                        # avoid rect_pos to consist a fit shape rect.
+                        # such as: [a, b, c] use [a, b], [a, b] is a fit shape rect.
+                        if self._get_smallest_rect(rect_pos) != unfit_rect:
+                            continue
+                        if self._verify_unfit_rect(unfit_rect, rect_pos):
+                            self._fill_rect(unfit_rect, get_addends_random(addends_num), rect_pos)
+                            find_rect_flag = True
                             break
-                if not find_rect_flag:
-                    rect = self._get_rect_with_fit_shape(pos, fit_shapes)
-                    if not rect:
-                        continue
-                    self._fill_rect(rect, get_addends_random(addends_num))
-            else:
+                    if find_rect_flag:
+                        break
+            if not find_rect_flag:
                 rect = self._get_rect_with_fit_shape(pos, fit_shapes)
                 if not rect:
                     continue
@@ -335,36 +361,35 @@ class BoardGenerator:
 
     def _generate_rects_with_separate_pos(self, addends_num, group_num):
         """
-        generate_rects_with_separate_pos is the last step for generating addends_num rect,
-        so it returns a bool value.
+        generate_rects_with_separate_pos is the last step for generating addends_num rect.
 
         :param addends_num: int, num of addends.
         :param group_num: int, num of addends groups.
-        :return: bool, if generating group_num rect return True, otherwise return False.
+        :return: int, the remaining num of rect that can't be generated.
+                if not 0, generating board failed.
         """
         valid_pos = get_zero_pos(self._board)
         random.shuffle(valid_pos)
 
         while 0 < group_num <= (len(valid_pos) // addends_num):
             find_rect_flag = False
-            for rect_pos in self._expand_rect(valid_pos, addends_num, []):
+            for rect_pos in self._expand_rect(valid_pos, addends_num):
                 rect = self._get_smallest_rect(rect_pos)
                 if self._verify_unfit_rect(rect, rect_pos):
                     find_rect_flag = True
-                    for pos, addend in zip(rect_pos, get_addends_random(addends_num)):
-                        self._board[pos] = addend
-                        valid_pos.remove(pos)
+                    self._fill_rect(rect, get_addends_random(addends_num), rect_pos)
+                    valid_pos = [p for p in valid_pos if p not in rect_pos]
                     break
 
             if not find_rect_flag:
-                return group_num == 0
+                return group_num
             group_num -= 1
-        return group_num == 0
+        return group_num
 
 
 if __name__ == '__main__':
-    random.seed(234)
-    for _ in range(100):
+    random.seed(2344456774)
+    for _ in range(10000):
         print(_)
         # bg = BoardGenerator(11, 13)
         # _board = bg.generate_once(return_invalid_board=True)
