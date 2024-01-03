@@ -1,8 +1,8 @@
 import functools
 import itertools
-import random
 
 import numpy as np
+import numpy.random as random
 
 from common.board import *
 from common.utils import *

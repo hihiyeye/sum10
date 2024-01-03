@@ -5,7 +5,7 @@ sys.path.append('..')
 import time
 import datetime
 import cProfile
-import random
+import numpy.random as random
 from common import print_board
 from board_solver import BoardSolverSimple
 from board_gen import generate_board

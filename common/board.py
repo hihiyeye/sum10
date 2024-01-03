@@ -6,9 +6,8 @@ __all__ = ['board_to_key',
            'estimate_groups_nums',
            'tune_groups_nums']
 
-import random
-
 import numpy as np
+import numpy.random as random
 
 
 def board_to_key(board: np.ndarray):
@@ -63,7 +62,8 @@ addends_of_10 = _pre_calc_addends()
 def get_addends_random(addends_num):
     if not 2 <= addends_num <= 5:
         raise ValueError('{} out of range [2, 5].'.format(addends_num))
-    addends = list(random.choice(addends_of_10[addends_num]))
+    selected_index = random.choice(range(len(addends_of_10[addends_num])))
+    addends = list(addends_of_10[addends_num][selected_index])
     random.shuffle(addends)
     return addends
 

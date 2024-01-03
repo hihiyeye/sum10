@@ -21,5 +21,11 @@ def rect_area(a, b):
     return abs(a[0] - b[0]) * abs(a[1] - b[1])
 
 
-def get_zero_pos(board):
+def get_zero_pos(board: np.ndarray):
+    """
+    not use np.argwhere because we want pos in tuple type,
+    however np.arawhere return a np.array
+    :param board: np.array
+    :return: a list of zero pos in board, in which a elem is a tuple: (x, y).
+    """
     return list(zip(*np.where(board == 0)))
