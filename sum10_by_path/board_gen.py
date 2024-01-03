@@ -78,7 +78,8 @@ class BoardGenerator:
                         path.append(min_dis_unused_pos)
                         unused_pos.remove(min_dis_unused_pos)
 
-                addends = list(random.choice(addends_of_10[addends_num]))
+                selected_index = random.choice(range(len(addends_of_10[addends_num])))
+                addends = list(addends_of_10[addends_num][selected_index])
                 random.shuffle(addends)
                 for pos, addend in zip(path, addends):
                     if _board[pos] != 0:
@@ -91,5 +92,6 @@ class BoardGenerator:
 
 if __name__ == '__main__':
     for _ in range(100000):
+        print(_)
         print_board(generate_board(10, 11))
         print('------------')

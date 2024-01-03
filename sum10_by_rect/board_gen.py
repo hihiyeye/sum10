@@ -119,12 +119,14 @@ class BoardGenerator:
     def _generate_rects_of_3_addends(self):
         remaining_group_num = self._generate_rects(
             3, self._groups_nums[3], fit_shapes=[(1, 3), (3, 1)], unfit_shapes=[(1, 4), (4, 1), (2, 2)])
-        return remaining_group_num == 0 or self._generate_rects_with_separate_pos(3, remaining_group_num)
+        return remaining_group_num == 0 \
+               or self._generate_rects_with_separate_pos(3, remaining_group_num)
 
     def _generate_rects_of_2_addends(self):
         remaining_group_num = self._generate_rects(
             2, self._groups_nums[2], fit_shapes=[(1, 2), (2, 1)], unfit_shapes=[(1, 3), (3, 1)])
-        return remaining_group_num == 0 or self._generate_rects_with_separate_pos(2, remaining_group_num)
+        return remaining_group_num == 0 \
+               or self._generate_rects_with_separate_pos(2, remaining_group_num)
 
     @staticmethod
     def _get_smallest_rect(rect_pos):
@@ -365,8 +367,7 @@ class BoardGenerator:
 
         :param addends_num: int, num of addends.
         :param group_num: int, num of addends groups.
-        :return: int, the remaining num of rect that can't be generated.
-                if not 0, generating board failed.
+        :return: bool, if False, generating board failed.
         """
         valid_pos = get_zero_pos(self._board)
         random.shuffle(valid_pos)
@@ -382,9 +383,9 @@ class BoardGenerator:
                     break
 
             if not find_rect_flag:
-                return group_num
+                return group_num == 0
             group_num -= 1
-        return group_num
+        return group_num == 0
 
 
 if __name__ == '__main__':
